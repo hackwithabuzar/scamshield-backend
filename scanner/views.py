@@ -1,5 +1,6 @@
 import re
 import zipfile
+import os
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.views.decorators.csrf import csrf_exempt
@@ -61,34 +62,60 @@ def check_url(request):
     })
 
 
-# APK ANALYSIS ENGINE
+UPLOAD_DIR = "uploads/"
+
 def analyze_apk(path):
     score = 100
     reasons = []
+
+    # NEW: details dictionary
+    details = {
+        "sms": False,
+        "network": False,
+        "native_libs": False,
+        "assets": False
+    }
 
     try:
         with zipfile.ZipFile(path, 'r') as apk:
             files = apk.namelist()
 
             for f in files:
-                if "sms" in f.lower():
+                name = f.lower()
+
+                if "sms" in name:
                     score -= 20
                     reasons.append("Uses SMS functionality")
+                    details["sms"] = True
 
-                if "http" in f.lower():
+                if "http" in name:
                     score -= 10
                     reasons.append("Contains network calls")
+                    details["network"] = True
 
-                if "dex" in f.lower():
-                    reasons.append("Contains DEX file (normal)")
+                if "lib/" in name:
+                    details["native_libs"] = True
+
+                if "assets/" in name:
+                    details["assets"] = True
 
     except:
         reasons.append("Error analyzing APK")
 
-    return score, reasons
+    # Clamp score
+    score = max(0, min(score, 100))
 
+    # NEW: risk category
+    if score > 80:
+        risk = "LOW"
+    elif score > 50:
+        risk = "MEDIUM"
+    else:
+        risk = "HIGH"
 
-# APK UPLOAD API
+    return score, reasons, risk, details
+
+#  APK UPLOAD API
 @csrf_exempt
 def upload_apk(request):
     if request.method == "POST":
@@ -97,14 +124,19 @@ def upload_apk(request):
         if not file:
             return Response({"error": "No file uploaded"})
 
-        path = "uploads/" + file.name
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+        path = os.path.join(UPLOAD_DIR, file.name)
+
+        # Save file
         with open(path, "wb+") as f:
             for chunk in file.chunks():
                 f.write(chunk)
 
-        score, reasons = analyze_apk(path)
+        # Analyze
+        score, reasons, risk, details = analyze_apk(path)
 
+        # Status logic
         if score > 80:
             status = "SAFE"
         elif score > 50:
@@ -112,11 +144,16 @@ def upload_apk(request):
         else:
             status = "DANGEROUS"
 
+        # DELETE FILE AFTER ANALYSIS (IMPORTANT)
+        os.remove(path)
+
         return Response({
-            "file": file.name,
-            "score": score,
-            "status": status,
-            "reasons": reasons
+           "file": file.name,
+           "score": score,
+           "status": status,
+           "risk": risk,
+           "reasons": reasons,
+           "details": details
         })
 
 
