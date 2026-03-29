@@ -1,0 +1,1 @@
+web: gunicorn scamshield_backend.wsgi
