@@ -116,15 +116,15 @@ def analyze_apk(path):
     return score, reasons, risk, details
 
 #  APK UPLOAD API
-@csrf_exempt
+@api_view(['GET', 'POST'])
 def upload_apk(request):
-    
-    # HANDLE GET (IMPORTANT FIX)
+
+    # ✅ HANDLE GET
     if request.method == "GET":
         return Response({"message": "Send APK file using POST request"})
 
-    #  HANDLE POST (YOUR MAIN LOGIC)
-    if request.method == "POST":
+    # ✅ HANDLE POST
+    elif request.method == "POST":
         file = request.FILES.get('apk')
 
         if not file:
@@ -150,18 +150,21 @@ def upload_apk(request):
         else:
             status = "DANGEROUS"
 
-        # DELETE FILE AFTER ANALYSIS (IMPORTANT)
+        # Delete file
         os.remove(path)
 
+        # ✅ FINAL RESPONSE (FIXED)
         return Response({
-           "file": file.name,
-           "score": score,
-           "status": status,
-           "risk": risk,
-           "reasons": reasons,
-           "details": details
+            "file": file.name,
+            "score": score,
+            "status": status,
+            "risk": risk,
+            "reasons": reasons,
+            "details": details
         })
 
+    # ✅ SAFETY (VERY IMPORTANT)
+    return Response({"error": "Invalid request"})
 
 # METRICS API (ADVANCED)
 @api_view(['GET'])
