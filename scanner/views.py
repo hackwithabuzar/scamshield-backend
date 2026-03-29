@@ -118,6 +118,12 @@ def analyze_apk(path):
 #  APK UPLOAD API
 @csrf_exempt
 def upload_apk(request):
+    
+    # HANDLE GET (IMPORTANT FIX)
+    if request.method == "GET":
+        return Response({"message": "Send APK file using POST request"})
+
+    #  HANDLE POST (YOUR MAIN LOGIC)
     if request.method == "POST":
         file = request.FILES.get('apk')
 
