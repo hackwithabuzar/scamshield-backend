@@ -7,7 +7,7 @@ import requests
 import base64
 import hashlib
 
-VT_API_KEY = "c9254d531386c5cd44f9ee99da5b1ad38a7ba3337667394eb04e9f62bf61ef96"
+VT_API_KEY = os.environ.get("VT_API_KEY")
 
 # 🔥 METRICS COUNTERS
 total_checks = 0
