@@ -96,9 +96,9 @@ def check_url(request):
 
         score, reasons = analyze_url(url)
 
-        # 🔥 SAFE VT
         vt_result = check_url_vt(url)
 
+        # 🔥 VT DATA FOR RESPONSE
         if vt_result:
             malicious, suspicious = vt_result
 
@@ -109,8 +109,18 @@ def check_url(request):
             if suspicious > 0:
                 score -= 20
                 reasons.append(f"{suspicious} suspicious engines")
+
+            vt_info = {
+                "malicious": malicious,
+                "suspicious": suspicious
+            }
         else:
             reasons.append("VT unavailable")
+            vt_info = {
+                "malicious": 0,
+                "suspicious": 0,
+                "note": "VT unavailable"
+            }
 
         score = max(0, min(score, 100))
 
@@ -132,7 +142,8 @@ def check_url(request):
             "url": url,
             "score": score,
             "status": status,
-            "reasons": reasons
+            "reasons": reasons,
+            "vt": vt_info   # 🔥 NEW FIELD
         })
 
     except Exception as e:
@@ -247,17 +258,27 @@ def upload_apk(request):
 
         score, reasons, risk = analyze_apk(path)
 
-        # 🔥 SAFE VT
         vt_result = check_apk_vt(get_file_hash(path))
 
+        # 🔥 VT DATA
         if vt_result:
             malicious, suspicious = vt_result
 
             if malicious > 0:
                 score -= 40
                 reasons.append("Malicious detected")
+
+            vt_info = {
+                "malicious": malicious,
+                "suspicious": suspicious
+            }
         else:
             reasons.append("VT unavailable")
+            vt_info = {
+                "malicious": 0,
+                "suspicious": 0,
+                "note": "VT unavailable"
+            }
 
         os.remove(path)
 
@@ -281,7 +302,8 @@ def upload_apk(request):
             "score": score,
             "status": status,
             "risk": risk,
-            "reasons": reasons
+            "reasons": reasons,
+            "vt": vt_info   # 🔥 NEW FIELD
         })
 
     except Exception as e:
