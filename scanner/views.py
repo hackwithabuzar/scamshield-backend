@@ -7,10 +7,9 @@ import requests
 import base64
 import hashlib
 
-# 🔐 Secure API Key
 VT_API_KEY = os.environ.get("VT_API_KEY")
 
-# 🔥 METRICS COUNTERS
+# 🔥 METRICS
 total_checks = 0
 safe_count = 0
 warning_count = 0
@@ -18,12 +17,12 @@ danger_count = 0
 total_score = 0
 high_risk_count = 0
 
+
 # =========================
-# VIRUSTOTAL URL CHECK
+# VIRUSTOTAL URL
 # =========================
 def check_url_vt(url):
     try:
-        # 🔥 FIX: Skip if no API key
         if not VT_API_KEY:
             return None
 
@@ -31,14 +30,20 @@ def check_url_vt(url):
         vt_url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
 
         headers = {"x-apikey": VT_API_KEY}
-
         response = requests.get(vt_url, headers=headers, timeout=10)
 
         if response.status_code != 200:
             return None
 
-        stats = response.json()["data"]["attributes"]["last_analysis_stats"]
-        return stats["malicious"], stats["suspicious"]
+        data = response.json()
+
+        if "data" not in data:
+            return None
+
+        attributes = data["data"].get("attributes", {})
+        stats = attributes.get("last_analysis_stats", {})
+
+        return stats.get("malicious", 0), stats.get("suspicious", 0)
 
     except Exception as e:
         print("VT URL ERROR:", e)
@@ -46,26 +51,26 @@ def check_url_vt(url):
 
 
 # =========================
-# URL ANALYSIS ENGINE
+# URL ANALYSIS
 # =========================
 def analyze_url(url):
     score = 100
     reasons = []
-    url_lower = url.lower()
+    url = url.lower()
 
-    if url_lower.startswith("http://"):
+    if url.startswith("http://"):
         score -= 20
         reasons.append("No HTTPS")
 
-    if re.search(r'login|verify|bank|secure|update|account|payment|free|offer|bonus|win', url_lower):
+    if re.search(r'login|verify|bank|secure|update|account|payment|free|offer|bonus|win', url):
         score -= 25
-        reasons.append("Phishing keywords detected")
+        reasons.append("Phishing keywords")
 
-    if "@" in url_lower:
+    if "@" in url:
         score -= 15
-        reasons.append("Suspicious '@' symbol")
+        reasons.append("Suspicious '@'")
 
-    if url_lower.count('.') > 3:
+    if url.count('.') > 3:
         score -= 10
         reasons.append("Too many subdomains")
 
@@ -73,75 +78,69 @@ def analyze_url(url):
         score -= 10
         reasons.append("Very long URL")
 
-    if any(char.isdigit() for char in url_lower):
-        score -= 10
-        reasons.append("Numeric domain detected")
-
-    if url_lower.count('-') > 2:
-        score -= 10
-        reasons.append("Too many '-' symbols")
-
     return score, reasons
 
 
 # =========================
-# URL CHECK API
+# URL API
 # =========================
 @api_view(['GET'])
 def check_url(request):
     global total_checks, safe_count, warning_count, danger_count, total_score, high_risk_count
 
-    url = request.GET.get('url')
+    try:
+        url = request.GET.get('url')
 
-    if not url:
-        return Response({"error": "No URL provided"})
+        if not url:
+            return Response({"error": "No URL provided"})
 
-    # 🔥 Local analysis
-    score, reasons = analyze_url(url)
+        score, reasons = analyze_url(url)
 
-    # 🔥 VirusTotal (optional)
-    vt_result = check_url_vt(url)
+        # 🔥 SAFE VT
+        vt_result = check_url_vt(url)
 
-    if vt_result:
-        malicious, suspicious = vt_result
+        if vt_result:
+            malicious, suspicious = vt_result
 
-        if malicious > 0:
-            score -= 40
-            reasons.append(f"{malicious} engines flagged malicious")
+            if malicious > 0:
+                score -= 40
+                reasons.append(f"{malicious} engines flagged")
 
-        if suspicious > 0:
-            score -= 20
-            reasons.append(f"{suspicious} engines suspicious")
-    else:
-        reasons.append("VT unavailable (local analysis used)")
+            if suspicious > 0:
+                score -= 20
+                reasons.append(f"{suspicious} suspicious engines")
+        else:
+            reasons.append("VT unavailable")
 
-    score = max(0, min(score, 100))
+        score = max(0, min(score, 100))
 
-    if score > 80:
-        status = "SAFE"
-    elif score > 50:
-        status = "WARNING"
-    else:
-        status = "DANGEROUS"
+        status = "SAFE" if score > 80 else "WARNING" if score > 50 else "DANGEROUS"
 
-    # 🔥 Metrics
-    total_checks += 1
-    total_score += score
+        # 🔥 METRICS
+        total_checks += 1
+        total_score += score
 
-    if status == "SAFE":
-        safe_count += 1
-    elif status == "WARNING":
-        warning_count += 1
-    else:
-        danger_count += 1
-        high_risk_count += 1
+        if status == "SAFE":
+            safe_count += 1
+        elif status == "WARNING":
+            warning_count += 1
+        else:
+            danger_count += 1
+            high_risk_count += 1
 
-    return Response({
-        "url": url,
-        "score": score,
-        "status": status,
-        "reasons": reasons
-    })
+        return Response({
+            "url": url,
+            "score": score,
+            "status": status,
+            "reasons": reasons
+        })
+
+    except Exception as e:
+        print("ERROR check_url:", e)
+        return Response({
+            "error": "Server error",
+            "details": str(e)
+        })
 
 
 # =========================
@@ -153,11 +152,10 @@ def get_file_hash(path):
 
 
 # =========================
-# APK VT CHECK
+# VIRUSTOTAL APK
 # =========================
 def check_apk_vt(file_hash):
     try:
-        # 🔥 FIX: Skip if no API key
         if not VT_API_KEY:
             return None
 
@@ -169,8 +167,15 @@ def check_apk_vt(file_hash):
         if response.status_code != 200:
             return None
 
-        stats = response.json()["data"]["attributes"]["last_analysis_stats"]
-        return stats["malicious"], stats["suspicious"]
+        data = response.json()
+
+        if "data" not in data:
+            return None
+
+        attributes = data["data"].get("attributes", {})
+        stats = attributes.get("last_analysis_stats", {})
+
+        return stats.get("malicious", 0), stats.get("suspicious", 0)
 
     except Exception as e:
         print("VT APK ERROR:", e)
@@ -178,7 +183,7 @@ def check_apk_vt(file_hash):
 
 
 # =========================
-# APK ANALYSIS ENGINE
+# APK ANALYSIS
 # =========================
 UPLOAD_DIR = "uploads/"
 
@@ -206,37 +211,28 @@ def analyze_apk(path):
                     score -= 10
                     reasons.append("Network calls")
 
-                if "hack" in name or "mod" in name:
-                    score -= 20
-                    reasons.append("Suspicious file name")
-
     except Exception as e:
         print("APK ERROR:", e)
-        reasons.append("Error analyzing APK")
+        reasons.append("APK analysis error")
 
     score = max(0, min(score, 100))
 
-    if score > 80:
-        risk = "LOW"
-    elif score > 50:
-        risk = "MEDIUM"
-    else:
-        risk = "HIGH"
+    risk = "LOW" if score > 80 else "MEDIUM" if score > 50 else "HIGH"
 
     return score, reasons, risk
 
 
 # =========================
-# APK UPLOAD API
+# APK API
 # =========================
 @api_view(['GET', 'POST'])
 def upload_apk(request):
     global total_checks, safe_count, warning_count, danger_count, total_score, high_risk_count
 
-    if request.method == "GET":
-        return Response({"message": "Send APK file using POST request"})
+    try:
+        if request.method == "GET":
+            return Response({"message": "Use POST"})
 
-    elif request.method == "POST":
         file = request.FILES.get('apk')
 
         if not file:
@@ -249,38 +245,27 @@ def upload_apk(request):
             for chunk in file.chunks():
                 f.write(chunk)
 
-        # 🔥 Local analysis
         score, reasons, risk = analyze_apk(path)
 
-        # 🔥 VirusTotal (optional)
-        file_hash = get_file_hash(path)
-        vt_result = check_apk_vt(file_hash)
+        # 🔥 SAFE VT
+        vt_result = check_apk_vt(get_file_hash(path))
 
         if vt_result:
             malicious, suspicious = vt_result
 
             if malicious > 0:
                 score -= 40
-                reasons.append(f"{malicious} engines detected malware")
-
-            if suspicious > 0:
-                score -= 20
-                reasons.append(f"{suspicious} engines suspicious")
+                reasons.append("Malicious detected")
         else:
-            reasons.append("VT unavailable (local analysis used)")
+            reasons.append("VT unavailable")
 
         os.remove(path)
 
         score = max(0, min(score, 100))
 
-        if score > 80:
-            status = "SAFE"
-        elif score > 50:
-            status = "WARNING"
-        else:
-            status = "DANGEROUS"
+        status = "SAFE" if score > 80 else "WARNING" if score > 50 else "DANGEROUS"
 
-        # 🔥 Metrics
+        # 🔥 METRICS
         total_checks += 1
         total_score += score
 
@@ -299,7 +284,12 @@ def upload_apk(request):
             "reasons": reasons
         })
 
-    return Response({"error": "Invalid request"})
+    except Exception as e:
+        print("ERROR upload_apk:", e)
+        return Response({
+            "error": "Server error",
+            "details": str(e)
+        })
 
 
 # =========================
@@ -307,15 +297,12 @@ def upload_apk(request):
 # =========================
 @api_view(['GET'])
 def metrics(request):
-    avg_score = total_score / total_checks if total_checks else 0
-    threat_percentage = (danger_count / total_checks) * 100 if total_checks else 0
+    avg = total_score / total_checks if total_checks else 0
 
     return Response({
         "total_checks": total_checks,
         "safe": safe_count,
         "warning": warning_count,
         "dangerous": danger_count,
-        "high_risk": high_risk_count,
-        "average_score": round(avg_score, 2),
-        "threat_percentage": round(threat_percentage, 2)
+        "average_score": round(avg, 2)
     })
