@@ -7,6 +7,7 @@ import requests
 import base64
 import hashlib
 
+# 🔐 Secure API Key
 VT_API_KEY = os.environ.get("VT_API_KEY")
 
 # 🔥 METRICS COUNTERS
@@ -22,11 +23,16 @@ high_risk_count = 0
 # =========================
 def check_url_vt(url):
     try:
+        # 🔥 FIX: Skip if no API key
+        if not VT_API_KEY:
+            return None
+
         url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
         vt_url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
+
         headers = {"x-apikey": VT_API_KEY}
 
-        response = requests.get(vt_url, headers=headers, timeout=5)
+        response = requests.get(vt_url, headers=headers, timeout=10)
 
         if response.status_code != 200:
             return None
@@ -34,7 +40,8 @@ def check_url_vt(url):
         stats = response.json()["data"]["attributes"]["last_analysis_stats"]
         return stats["malicious"], stats["suspicious"]
 
-    except:
+    except Exception as e:
+        print("VT URL ERROR:", e)
         return None
 
 
@@ -89,10 +96,10 @@ def check_url(request):
     if not url:
         return Response({"error": "No URL provided"})
 
-    # 🔥 Step 1: Local Analysis
+    # 🔥 Local analysis
     score, reasons = analyze_url(url)
 
-    # 🔥 Step 2: VirusTotal (optional)
+    # 🔥 VirusTotal (optional)
     vt_result = check_url_vt(url)
 
     if vt_result:
@@ -106,12 +113,10 @@ def check_url(request):
             score -= 20
             reasons.append(f"{suspicious} engines suspicious")
     else:
-        reasons.append("VT unavailable (using local analysis)")
+        reasons.append("VT unavailable (local analysis used)")
 
-    # Clamp score
     score = max(0, min(score, 100))
 
-    # Status
     if score > 80:
         status = "SAFE"
     elif score > 50:
@@ -119,7 +124,7 @@ def check_url(request):
     else:
         status = "DANGEROUS"
 
-    # Metrics
+    # 🔥 Metrics
     total_checks += 1
     total_score += score
 
@@ -140,19 +145,26 @@ def check_url(request):
 
 
 # =========================
-# APK VT HASH
+# APK HASH
 # =========================
 def get_file_hash(path):
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
 
 
+# =========================
+# APK VT CHECK
+# =========================
 def check_apk_vt(file_hash):
     try:
+        # 🔥 FIX: Skip if no API key
+        if not VT_API_KEY:
+            return None
+
         url = f"https://www.virustotal.com/api/v3/files/{file_hash}"
         headers = {"x-apikey": VT_API_KEY}
 
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=10)
 
         if response.status_code != 200:
             return None
@@ -160,7 +172,8 @@ def check_apk_vt(file_hash):
         stats = response.json()["data"]["attributes"]["last_analysis_stats"]
         return stats["malicious"], stats["suspicious"]
 
-    except:
+    except Exception as e:
+        print("VT APK ERROR:", e)
         return None
 
 
@@ -197,7 +210,8 @@ def analyze_apk(path):
                     score -= 20
                     reasons.append("Suspicious file name")
 
-    except:
+    except Exception as e:
+        print("APK ERROR:", e)
         reasons.append("Error analyzing APK")
 
     score = max(0, min(score, 100))
@@ -238,7 +252,7 @@ def upload_apk(request):
         # 🔥 Local analysis
         score, reasons, risk = analyze_apk(path)
 
-        # 🔥 VirusTotal
+        # 🔥 VirusTotal (optional)
         file_hash = get_file_hash(path)
         vt_result = check_apk_vt(file_hash)
 
@@ -266,6 +280,7 @@ def upload_apk(request):
         else:
             status = "DANGEROUS"
 
+        # 🔥 Metrics
         total_checks += 1
         total_score += score
 
